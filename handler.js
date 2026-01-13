@@ -80,6 +80,28 @@ const { type,args, reply,sender,ucapanWaktu,from,botNumber,senderNumber,groupNam
 const realSender = conn.getJid ? (conn.getJid(sender) || sender) : sender
 const normalizedOwnerNumbers = ownerNumber.map(n => conn.getJid ? (conn.getJid(n) || n) : n)
 
+// Normalize mentions and quoted sender so '@lid' references are resolved to real JIDs
+try {
+  if (m.mentionedJid && Array.isArray(m.mentionedJid)) {
+    m.mentionedJid = m.mentionedJid.map(id => {
+      try { return conn.resolveId ? conn.resolveId(id) : (conn.getJid ? conn.getJid(id) || id : id) } catch (e) { return id }
+    })
+  }
+  if (m.mentionByTag && Array.isArray(m.mentionByTag)) {
+    m.mentionByTag = m.mentionByTag.map(id => {
+      try { return conn.resolveId ? conn.resolveId(id) : (conn.getJid ? conn.getJid(id) || id : id) } catch (e) { return id }
+    })
+  }
+  if (m.mentionByReply) {
+    try { m.mentionByReply = conn.resolveId ? conn.resolveId(m.mentionByReply) : (conn.getJid ? conn.getJid(m.mentionByReply) || m.mentionByReply : m.mentionByReply) } catch (e) {}
+  }
+  if (m.quoted && m.quoted.sender) {
+    try { m.quoted.sender = conn.resolveId ? conn.resolveId(m.quoted.sender) : (conn.getJid ? conn.getJid(m.quoted.sender) || m.quoted.sender : m.quoted.sender) } catch (e) {}
+  }
+} catch (e) {
+  // ignore
+}
+
 if (multi){
 var prefix = /^[°zZ#,.''()√%!¢£¥€π¤ΠΦ&<`™©®Δ^βα¦|/\\©^]/.test(body) ? body.match(/^[°zZ#,.''()√%¢£¥€π¤ΠΦ&<!`™©®Δ^βα¦|/\\©^]/gi) : '.'
 var thePrefix = "Multi Prefix"
@@ -141,8 +163,17 @@ const command = (prem || isOwner)? body.replace(prefix, '').trim().split(/ +/).s
 const theOwner = sender == Ownerin
 const quoted = m.quoted ? m.quoted : m.msg === undefined? m: m.msg
 const mime = (quoted.msg || quoted).mimetype || ''
-const numberQuery = q.replace(new RegExp("[()+-/ +/]", "gi"), "") + `@s.whatsapp.net`
-const Input = m.isGroup? mentionByTag[0]? mentionByTag[0] : mentionByReply ? mentionByReply : q? numberQuery : false : false
+let numberQuery = ''
+if (q) {
+  const cleaned = q.replace(new RegExp("[()+-/ +/]", "gi"), "")
+  if (q.includes('@')) {
+    // If user supplied a full jid (eg. '@lid' or '@s.whatsapp.net'), try resolving via conn.getJid
+    try { numberQuery = conn.getJid ? (conn.getJid(q) || q) : q } catch (e) { numberQuery = q }
+  } else {
+    try { numberQuery = conn.resolveId ? (conn.resolveId(cleaned) || (cleaned + '@s.whatsapp.net')) : (cleaned + '@s.whatsapp.net') } catch (e) { numberQuery = cleaned + '@s.whatsapp.net' }
+  }
+} 
+const Input = m.isGroup ? ((m.mentionByTag && m.mentionByTag[0]) ? m.mentionByTag[0] : (m.mentionByReply ? m.mentionByReply : (m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : q ? numberQuery : false))) : false
 const replyCommand = isCmd? isCmd : allcommand.includes(toFirstCase(command))
 const user = global.db.data.users[m.sender]
 const botRun = global.db.data.others['runtime']
